@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Pico Morse Receiver</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; }
+        #display { font-size: 4rem; margin: 50px; min-height: 1.2em; border-bottom: 2px solid #00ff00; color: #00ff00; }
+        button { padding: 15px 30px; font-size: 1.2rem; cursor: pointer; border-radius: 5px; border: none; background: #008cba; color: white; }
+        button:hover { background: #007399; }
+    </style>
+</head>
+<body>
+    <h1>Pico Morse Decoder 連携</h1>
+    <button id="connect">Picoと接続する</button>
+    <div id="display">ここに文字が出ます</div>
+    <p>※ChromeまたはEdgeを使用してください</p>
+
+    <script>
+        let port;
+        const connectBtn = document.getElementById('connect');
+        const display = document.getElementById('display');
+
+        connectBtn.addEventListener('click', async () => {
+            try {
+                // 1. シリアルポートを選択
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                connectBtn.innerText = "接続済み";
+
+                const textDecoder = new TextDecoderStream();
+                const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+                const reader = textDecoder.readable.getReader();
+
+                // 2. Picoからのデータを監視
+                display.innerText = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        // 改行や空白を除去して表示に追加
+                        const cleanValue = value.trim();
+                        if (cleanValue) {
+                            display.innerText += cleanValue;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('接続エラー:', error);
+                alert("接続に失敗しました。");
+            }
+        });
+    </script>
+</body>
+</html>
