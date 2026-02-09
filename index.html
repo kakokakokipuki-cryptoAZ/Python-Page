@@ -2,80 +2,90 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Pico Morse Controller</title>
+    <title>Pico Fighter - BAKUSAN</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: #00ff00; padding: 20px; }
-        #display { font-size: 4rem; margin: 20px auto; min-height: 1.2em; background: #000; border-radius: 10px; padding: 20px; }
-        .controls { display: flex; justify-content: center; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
-        button { padding: 10px 20px; font-size: 1rem; cursor: pointer; border: none; border-radius: 5px; color: white; }
-        #connect { background: #008cba; }
-        #reset { background: #ff4444; }
-        .mode-btn { background: #444; }
+        body { margin: 0; background: #000; color: #0f0; font-family: monospace; overflow: hidden; text-align: center; }
+        canvas { display: block; }
+        .ui { position: absolute; top: 20px; width: 100%; pointer-events: none; }
+        #score { font-size: 3rem; }
+        .btns { position: absolute; bottom: 20px; width: 100%; pointer-events: auto; }
+        button { padding: 15px; font-size: 1.2rem; cursor: pointer; background: #222; color: #0f0; border: 1px solid #0f0; }
     </style>
 </head>
 <body>
-    <h1>Morse Decoder Web</h1>
-    <div id="display">---</div>
-
-    <div class="controls">
-        <button id="connect">PICOと接続</button>
-        <button id="reset">PICOをリセット</button>
-        <!-- ここにモード切替ボタンを追加！ -->
-        <button id="set-eng" class="mode-btn">欧文(ABC)</button>
-        <button id="set-kana" class="mode-btn">和文(カナ)</button>
+    <canvas id="gameCanvas"></canvas>
+    <div class="ui">
+        <div id="score">SCORE: 0</div>
+        <div id="msg"></div>
     </div>
-    <div id="status" style="margin-top:20px; color:#888;">切断中</div>
+    <div class="btns">
+        <button id="connect">PICO接続</button>
+        <button id="reset">リセット(R)</button>
+    </div>
 
-    <script>
-        let port;
-        const display = document.getElementById('display');
-        const status = document.getElementById('status');
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-        // 接続処理
-        document.getElementById('connect').addEventListener('click', async () => {
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
-                status.innerText = "接続済み";
-                
-                const decoder = new TextDecoderStream();
-                port.readable.pipeTo(decoder.writable);
-                const reader = decoder.readable.getReader();
-                display.innerText = "";
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    if (value) {
-                        const char = value.trim();
-                        if (char === "RESET_ACK") display.innerText = "";
-                        else if (char) display.innerText += char;
-                    }
-                }
-            } catch (err) { status.innerText = "エラー: " + err; }
+let particles = [];
+let port, reader;
+
+// 爆散エフェクト関数
+function explode() {
+    for(let i=0; i<100; i++){
+        particles.push({
+            x: canvas.width/2, y: canvas.height/2,
+            vx: (Math.random()-0.5)*20, vy: (Math.random()-0.5)*20,
+            life: 50, color: `hsl(${Math.random()*60+10}, 100%, 50%)`
         });
+    }
+}
 
-        // 1. リセット送信
-        document.getElementById('reset').addEventListener('click', () => sendToPico("R"));
+// 描画ループ
+function loop() {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    particles.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.life--;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 5, 5);
+        if(p.life <= 0) particles.splice(i, 1);
+    });
+    requestAnimationFrame(loop);
+}
+loop();
 
-        // 2. モード送信
-        document.getElementById('set-eng').addEventListener('click', () => {
-            sendToPico("E");
-            status.innerText = "モード: 欧文(ABC)";
-        });
-
-        document.getElementById('set-kana').addEventListener('click', () => {
-            sendToPico("K");
-            status.innerText = "モード: 和文(カナ)";
-        });
-
-        // 送信用共通関数
-        async function sendToPico(msg) {
-            if (port && port.writable) {
-                const writer = port.writable.getWriter();
-                await writer.write(new TextEncoder().encode(msg + "\n"));
-                writer.releaseLock();
+// シリアル通信
+document.getElementById('connect').onclick = async () => {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    const decoder = new TextDecoderStream();
+    port.readable.pipeTo(decoder.writable);
+    reader = decoder.readable.getReader();
+    while(true){
+        const {value, done} = await reader.read();
+        if(value){
+            const cmd = value.trim();
+            if(cmd === "GAMEOVER") {
+                explode();
+                document.getElementById('msg').innerText = "BAKUSAN!!";
+                setTimeout(()=>document.getElementById('msg').innerText="", 2000);
+            } else if(cmd.startsWith("S:")) {
+                document.getElementById('score').innerText = "SCORE: " + cmd.split(":")[1];
             }
         }
-    </script>
+    }
+};
+
+document.getElementById('reset').onclick = async () => {
+    if(port){
+        const writer = port.writable.getWriter();
+        await writer.write(new TextEncoder().encode("R"));
+        writer.releaseLock();
+    }
+};
+</script>
 </body>
 </html>
